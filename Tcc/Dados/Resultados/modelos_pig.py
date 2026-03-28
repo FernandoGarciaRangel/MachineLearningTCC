@@ -8,14 +8,16 @@ Modelos implementados (classificação e regressão):
   4. Gradient Boosting (XGBoost)
 
 Datasets:
-  - dataset_transicoes_com_manutencao.xlsx
-  - dataset_transicoes_sem_manutencao.xlsx
+  - dataset_com_manutencao.xlsx
+  - dataset_sem_manutencao.xlsx
 
 Autores: Fernando Garcia Rangel / Leonardo dos Santos Rodrigues
 """
 
 import warnings
 warnings.filterwarnings('ignore')
+
+from pathlib import Path
 
 import pandas as pd
 import numpy as np
@@ -40,29 +42,30 @@ from openpyxl.utils import get_column_letter
 # =============================================================================
 
 FEATURES = [
-    'ano_inicial',
+    'ano',
     'posicao_m',
-    'dist_sold_ant_m_ini',
-    'compr_tubo_m_ini',
+    'dist_sold_ant_m',
+    'compr_tubo_m',
     'ie_enc',
     'tipo_enc',
-    'pos_horaria_graus_ini',
-    'esp_mm_ini',
-    'compr_mm_ini',
-    'larg_mm_ini',
-    'prof_pct_ini',
-    'erf_ini',
+    'pos_horaria_graus',
+    'esp_mm',
+    'compr_mm',
+    'larg_mm',
+    'prof_pct',
+    'erf',
     'tipo_pof_enc'
 ]
 
-TARGET_CLASS = 'classe_taxa_enc'
+TARGET_CLASS = 'classe_risco_enc'
 TARGET_REG   = 'taxa_corrosao_ano'
 
-CLASSES_NOMES = ['Lenta', 'Moderada', 'Acelerada', 'Critica']
+CLASSES_NOMES = ['Baixo', 'Medio', 'Alto']
 
+_PASTA_TRATADOS = Path(__file__).resolve().parent.parent / 'Tratados'
 DATASETS = {
-    'Com Manutencao': 'dataset_transicoes_com_manutencao.xlsx',
-    'Sem Manutencao': 'dataset_transicoes_sem_manutencao.xlsx'
+    'Com Manutencao': _PASTA_TRATADOS / 'dataset_com_manutencao.xlsx',
+    'Sem Manutencao': _PASTA_TRATADOS / 'dataset_sem_manutencao.xlsx',
 }
 
 RANDOM_STATE = 42
@@ -266,11 +269,14 @@ for nome_ds, arquivo in DATASETS.items():
                         set(teste[TARGET_CLASS].unique())
 
     X_treino_val, y_treino_val_c = preparar_xy(treino_val, TARGET_CLASS)
-    X_treino_val_r, y_treino_val_r = preparar_xy(treino_val, TARGET_REG)
     X_val,  y_val_c  = preparar_xy(validacao, TARGET_CLASS)
-    X_val_r, y_val_r = preparar_xy(validacao, TARGET_REG)
     X_teste, y_teste_c = preparar_xy(teste, TARGET_CLASS)
-    X_teste_r, y_teste_r = preparar_xy(teste, TARGET_REG)
+
+    tem_regressao = TARGET_REG in treino_val.columns
+    if tem_regressao:
+        X_treino_val_r, y_treino_val_r = preparar_xy(treino_val, TARGET_REG)
+        X_val_r, y_val_r = preparar_xy(validacao, TARGET_REG)
+        X_teste_r, y_teste_r = preparar_xy(teste, TARGET_REG)
 
     resultados_ds = {'classificacao': {}, 'regressao': {}}
 
@@ -288,20 +294,23 @@ for nome_ds, arquivo in DATASETS.items():
         print(f"    {nome_m:25s} | Acurácia: {res['acc_teste']:.4f} | F1: {res['f1_teste']:.4f}")
 
     # ── REGRESSÃO ──────────────────────────────────────────────────────────
-    print(f"\n  [ REGRESSÃO ]")
-    for nome_m, modelo in get_modelos_regressao().items():
-        res = treinar_regressao(
-            nome_m, modelo,
-            X_treino_val_r, y_treino_val_r,
-            X_val_r, y_val_r,
-            X_teste_r, y_teste_r
-        )
-        if res is None:
-            print(f"    {'Regressao Logistica':25s} | N/A (não aplicável para regressão contínua)")
-            resultados_ds['regressao']['Regressao Logistica'] = None
-        else:
-            resultados_ds['regressao'][nome_m] = res
-            print(f"    {nome_m:25s} | MAE: {res['mae_teste']:.4f} | RMSE: {res['rmse_teste']:.4f} | R²: {res['r2_teste']:.4f}")
+    if tem_regressao:
+        print(f"\n  [ REGRESSÃO ]")
+        for nome_m, modelo in get_modelos_regressao().items():
+            res = treinar_regressao(
+                nome_m, modelo,
+                X_treino_val_r, y_treino_val_r,
+                X_val_r, y_val_r,
+                X_teste_r, y_teste_r
+            )
+            if res is None:
+                print(f"    {'Regressao Logistica':25s} | N/A (não aplicável para regressão contínua)")
+                resultados_ds['regressao']['Regressao Logistica'] = None
+            else:
+                resultados_ds['regressao'][nome_m] = res
+                print(f"    {nome_m:25s} | MAE: {res['mae_teste']:.4f} | RMSE: {res['rmse_teste']:.4f} | R²: {res['r2_teste']:.4f}")
+    else:
+        print(f"\n  [ REGRESSÃO ] — omitida (coluna '{TARGET_REG}' ausente no Excel)")
 
     todos_resultados[nome_ds] = resultados_ds
 
@@ -572,7 +581,7 @@ for nome in list(wb.sheetnames):
     if nome.startswith('CM_'):
         del wb[nome]
 
-output_path = '/mnt/user-data/outputs/resultados_modelos.xlsx'
+output_path = Path(__file__).resolve().parent / 'resultados_modelos.xlsx'
 wb.save(output_path)
 print(f"Resultados salvos em: {output_path}")
 print("Processamento concluído!")
